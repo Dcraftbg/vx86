@@ -1,6 +1,7 @@
-use std::{env, fs, process::ExitCode};
+use std::{collections::HashMap, env, fs, process::ExitCode};
 
-use prefix::Prefix;
+use lazy_static::lazy_static;
+use prefix::{BitPrefix, Prefix};
 use reader::Reader;
 mod prefix;
 mod reader;
@@ -61,18 +62,30 @@ fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     }
     Some(prefix)
 }
-fn parse_opcode(reader: &mut Reader) -> Option<(Escape, u8)> {
-    Some(
-        match reader.read_u8()? {
-            0x0F => todo!("Escape sequence decoding is not supported"),
-            op => (Escape::No, op)
-        }
-    )
+type DisasmFunc = fn (reader: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()>;
+lazy_static! {
+    static ref disasm_no_prefix: HashMap<u8, DisasmFunc> = {
+        let m = HashMap::new();
+        m
+    };
 }
-fn parse_inst(reader: &mut Reader) -> Option<Instruction> {
+fn disasm_opcode(reader: &mut Reader, prefixes: BitPrefix) -> Option<()> {
+    match reader.read_u8()? {
+        0x0F => todo!("Escape sequence decoding is not supported"),
+        op => {
+            match disasm_no_prefix.get(&op) {
+                Some(h) => (h)(reader, prefixes, op),
+                None => {
+                    todo!("Opcode 0x{:02X} is not supported", op);
+                }
+            }
+        }
+    }
+}
+fn disasm_inst(reader: &mut Reader) -> Option<()> {
     let prefixes = parse_prefixes(reader)?;
-    let (escape, op) = parse_opcode(reader)?;
-    todo!("Parse the rest");
+    disasm_opcode(reader, prefixes);
+    Some(())
 }
 fn main() -> ExitCode {
     let mut args = env::args();
@@ -97,8 +110,7 @@ fn main() -> ExitCode {
         Ok(v) => v,
     };
     let mut r = Reader::new(&bytes);
-    let inst = parse_inst(&mut r).expect("Invalid Instruction");
-    eprintln!("{:?}", inst);
+    disasm_inst(&mut r).expect("Invalid Instruction");
     println!("INFO: File size = {}", bytes.len());
     ExitCode::SUCCESS
 }
