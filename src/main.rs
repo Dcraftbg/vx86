@@ -96,7 +96,9 @@ fn main() -> ExitCode {
         }
         Ok(v) => v,
     };
-
+    let mut r = Reader::new(&bytes);
+    let inst = parse_inst(&mut r).expect("Invalid Instruction");
+    eprintln!("{:?}", inst);
     println!("INFO: File size = {}", bytes.len());
     ExitCode::SUCCESS
 }
