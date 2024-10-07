@@ -4,8 +4,16 @@ use prefix::Prefix;
 use reader::Reader;
 mod prefix;
 mod reader;
+
+#[derive(Debug)]
+enum Escape {
+    No
+}
+#[derive(Debug)]
 struct Instruction {
-    prefix: prefix::BitPrefix
+    prefix: prefix::BitPrefix,
+    escape: Escape,
+    op: u8
 }
 fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     let mut prefix = 0;
@@ -53,8 +61,17 @@ fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     }
     Some(prefix)
 }
+fn parse_opcode(reader: &mut Reader) -> Option<(Escape, u8)> {
+    Some(
+        match reader.read_u8()? {
+            0x0F => todo!("Escape sequence decoding is not supported"),
+            op => (Escape::No, op)
+        }
+    )
+}
 fn parse_inst(reader: &mut Reader) -> Option<Instruction> {
     let prefixes = parse_prefixes(reader)?;
+    let (escape, op) = parse_opcode(reader)?;
     todo!("Parse the rest");
 }
 fn main() -> ExitCode {
