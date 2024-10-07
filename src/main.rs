@@ -63,9 +63,33 @@ fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     Some(prefix)
 }
 type DisasmFunc = fn (reader: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()>;
+const DISASM_REG16_MAP: &[&'static str] = &[
+    "ax",
+    "cx",
+    "dx",
+    "bx",
+    "sp",
+    "bp",
+    "si",
+    "di"
+];
+fn disasm_mov(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
+    // TODO: Replace with a hashmap... I'm too lazy rn
+    match op {
+        op if op >= 0xB8 && op <= 0xB8+7 => {
+            let reg = op - 0xB8;
+            eprintln!("mov {}, {}", DISASM_REG16_MAP[reg as usize], r.read_u16()?); 
+        }
+        _ => todo!("Handle 0x{:02X} in mov", op)
+    }
+    Some(())
+}
 lazy_static! {
     static ref disasm_no_prefix: HashMap<u8, DisasmFunc> = {
-        let m = HashMap::new();
+        let mut m: HashMap<u8, DisasmFunc> = HashMap::new();
+        for op in 0xB8..0xB8+8 {
+            m.insert(op, disasm_mov);
+        }
         m
     };
 }
