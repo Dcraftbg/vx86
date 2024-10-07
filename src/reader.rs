@@ -15,6 +15,10 @@ impl <'a> Reader <'a> {
         Some(a)
     }
     #[inline]
+    pub fn eat(&mut self, n: usize) {
+        self.data = &self.data[n.min(self.data.len())..]
+    }
+    #[inline]
     pub fn read_u8(&mut self) -> Option<u8> {
         Some(self.read(1)?[0])
     }
