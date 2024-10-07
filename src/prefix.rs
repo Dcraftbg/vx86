@@ -16,9 +16,9 @@ pub mod Prefix {
     pub const FS_OV: BitPrefix = bit(7);
     pub const GS_OV: BitPrefix = bit(8);
 
-    pub const BRANCH_NOT_TAKEN: BitPrefix = bit(9);
-    pub const BRANCH_TAKEN    : BitPrefix = bit(10);
+    pub const BRANCH_NOT_TAKEN: BitPrefix = CS_OV;
+    pub const BRANCH_TAKEN    : BitPrefix = DS_OV;
     
-    pub const OP_SIZE  : BitPrefix = bit(11);
-    pub const ADDR_SIZE: BitPrefix = bit(12);
+    pub const OP_SIZE  : BitPrefix = bit(9);
+    pub const ADDR_SIZE: BitPrefix = bit(10);
 }
