@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 
-use crate::{modrm::Modrm, parse_prefixes, prefix::BitPrefix, reader::Reader, reg::{GPRReg, DISASM_REG16_MAP}};
+use crate::{modrm::Modrm, parse::parse_prefixes, prefix::BitPrefix, reader::Reader, reg::{GPRReg, DISASM_REG16_MAP}};
 
 
 fn disasm_add(r: &mut Reader, _prefixes: BitPrefix, op: u8) -> Option<()> {
