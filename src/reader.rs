@@ -36,4 +36,11 @@ impl <'a> Reader <'a> {
     pub const fn has_left(&self) -> bool {
         self.data.len() != 0
     }
+
+    pub fn offset_from(&self, arr: &'a [u8]) -> Option<usize> {
+        if self.data.as_ptr() < arr.as_ptr() { return None; }
+        unsafe { 
+            Some(self.data.as_ptr().offset_from(arr.as_ptr()) as usize)
+        }
+    }
 }
