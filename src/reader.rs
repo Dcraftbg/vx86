@@ -32,4 +32,8 @@ impl <'a> Reader <'a> {
         if self.data.len() < 1 { return None; }
         Some(self.data[0])
     }
+    #[inline]
+    pub const fn has_left(&self) -> bool {
+        self.data.len() != 0
+    }
 }
