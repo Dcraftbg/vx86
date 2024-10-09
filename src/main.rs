@@ -63,6 +63,17 @@ fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     Some(prefix)
 }
 type DisasmFunc = fn (reader: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()>;
+#[allow(non_snake_case)]
+mod GPRReg {
+    pub const A : usize = 0;
+    pub const C : usize = 1;
+    pub const D : usize = 2;
+    pub const B : usize = 3;
+    pub const SP: usize = 4;
+    pub const BP: usize = 5;
+    pub const SI: usize = 6;
+    pub const DI: usize = 7;
+}
 const DISASM_REG16_MAP: &[&'static str] = &[
     "ax",
     "cx",
@@ -147,6 +158,15 @@ fn disasm_mov(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
     }
     Some(())
 }
+fn disasm_cmp_rax_imm16(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
+    match op {
+        0x3D => {
+            eprintln!("cmp {}, {}", DISASM_REG16_MAP[GPRReg::A], r.read_u16()?); 
+        }
+        _ => unreachable!("Invalid")
+    }
+    Some(())
+}
 
 type RunFunc = fn (vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()>;
 
@@ -187,6 +207,7 @@ lazy_static! {
             m.insert(op, disasm_mov);
         }
         m.insert(0x01, disasm_add);
+        m.insert(0x3D, disasm_cmp_rax_imm16);
         m
     };
     static ref vm_no_prefix: HashMap<u8, RunFunc> = {
