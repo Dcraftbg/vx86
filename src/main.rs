@@ -73,6 +73,39 @@ const DISASM_REG16_MAP: &[&'static str] = &[
     "si",
     "di"
 ];
+#[derive(Debug, Clone, Copy)]
+struct Modrm(u8);
+impl Modrm {
+    #[inline]
+    pub const fn modb(self) -> u8 {
+        self.0 >> 6
+    }
+    #[inline]
+    pub const fn reg(self) -> u8 {
+        (self.0 >> 3) & 0b111
+    }
+
+    #[inline]
+    pub const fn rm(self) -> u8 {
+        self.0 & 0b111
+    }
+}
+fn disasm_add(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
+    match op {
+        0x01 => {
+            let modrm = Modrm(r.read_u8()?);
+            match modrm.modb() {
+                0b11 => {
+                    eprintln!("add {}, {}", DISASM_REG16_MAP[modrm.rm() as usize], DISASM_REG16_MAP[modrm.reg() as usize])
+                }
+                modb => todo!("Unsupported modb={:2b} for add", modb)
+            }
+            // eprintln!("add {}, {}", DISASM_REG16_MAP[(op-0x01) as usize])
+        }
+        _ => todo!("Handle 0x{:02X} in add", op)
+    }
+    Some(())
+}
 fn disasm_mov(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
     // TODO: Replace with a hashmap... I'm too lazy rn
     match op {
@@ -90,6 +123,7 @@ lazy_static! {
         for op in 0xB8..0xB8+8 {
             m.insert(op, disasm_mov);
         }
+        m.insert(0x01, disasm_add);
         m
     };
 }
@@ -134,7 +168,9 @@ fn main() -> ExitCode {
         Ok(v) => v,
     };
     let mut r = Reader::new(&bytes);
-    disasm_inst(&mut r).expect("Invalid Instruction");
+    while r.has_left() {
+        disasm_inst(&mut r).expect("Invalid Instruction");
+    }
     println!("INFO: File size = {}", bytes.len());
     ExitCode::SUCCESS
 }
