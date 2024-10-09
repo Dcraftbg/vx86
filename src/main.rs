@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, fs, process::ExitCode};
+use std::{collections::HashMap, env, fs, io::{self, BufRead, Write}, process::ExitCode};
 
 use lazy_static::lazy_static;
 use prefix::{BitPrefix, Prefix};
@@ -240,15 +240,43 @@ fn run_inst(vm: &mut VM) -> Option<()> {
     Some(())
 }
 
+struct Dbg {
+    vm: VM
+}
+impl Dbg {
+    #[inline]
+    const fn new(vm: VM) -> Self {
+        Self { vm }
+    }
+    fn disasm(&self) {
+        eprint!("{:08X}>", self.vm.rip);
+        let mut r = Reader::new(&self.vm.ram[self.vm.rip as usize..]);
+        if let None = disasm_inst(&mut r) {
+            eprintln!("???");
+        }
+    }
+    fn next(&mut self) {
+        run_inst(&mut self.vm).expect("Failed to run Instruction");
+    }
+}
+
 fn main() -> ExitCode {
     let mut args = env::args();
     let mut input = String::new();
     let _exe = args.next().expect("exe");
+    let mut debug = false;
     while let Some(arg) = args.next() {
-        if input.is_empty() { input = arg; }
-        else {
-            eprintln!("ERROR: Unknown argument `{}`",arg);
-            return ExitCode::FAILURE;
+        match arg.as_str() {
+            "-dbg" => {
+                debug = true;
+            }
+            _ => {
+                if input.is_empty() { input = arg; }
+                else {
+                    eprintln!("ERROR: Unknown argument `{}`",arg);
+                    return ExitCode::FAILURE;
+                }
+            }
         }
     }
     if input.is_empty() {
@@ -263,10 +291,43 @@ fn main() -> ExitCode {
         Ok(v) => v,
     };
     let mut vm = VM { gprs: [0;8], rip: 0, ram: bytes };
-    while (vm.rip as usize) < vm.ram.len() {
-        run_inst(&mut vm).expect("Invalid Instruction");
+    if debug {
+        let mut dbg = Dbg::new(vm);
+        let stdin = io::stdin();
+        let mut lastline = String::new();
+        let mut lines = stdin.lock().lines();
+
+        while (dbg.vm.rip as usize) < dbg.vm.ram.len() {
+            dbg.disasm();
+            eprint!(":");
+            io::stderr().flush().unwrap();
+            let line = match lines.next() {
+                Some(v) => v,
+                None => break,
+            };
+            if let Ok(mut l) = line {
+                if l.is_empty() {
+                    if lastline.is_empty() { continue; }
+                    l = lastline;
+                }
+                let line = l.as_str().trim();
+                match line {
+                    "s" => dbg.next(),
+                    _ => {
+                        eprintln!("Unknown cmd {}", line);
+                    }
+                }
+                lastline = l;
+            }
+        }
+        eprintln!("INFO: Register dump:");
+        dbg.vm.dump_gprs();
+    } else {
+        while (vm.rip as usize) < vm.ram.len() {
+            run_inst(&mut vm).expect("Invalid Instruction");
+        }
+        eprintln!("INFO: Register dump:");
+        vm.dump_gprs();
     }
-    eprintln!("INFO: Register dump:");
-    vm.dump_gprs();
     ExitCode::SUCCESS
 }
