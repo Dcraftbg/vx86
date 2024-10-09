@@ -1,10 +1,16 @@
 use std::{collections::HashMap, env, fs, io::{self, BufRead, Write}, process::ExitCode};
 
+use disasm::disasm_inst;
 use lazy_static::lazy_static;
+use modrm::Modrm;
 use prefix::{BitPrefix, Prefix};
 use reader::Reader;
+use reg::DISASM_REG32_MAP;
 mod prefix;
 mod reader;
+mod disasm;
+mod reg;
+mod modrm;
 
 #[derive(Debug)]
 enum Escape {
@@ -62,55 +68,6 @@ fn parse_prefixes(reader: &mut Reader) -> Option<prefix::BitPrefix> {
     }
     Some(prefix)
 }
-type DisasmFunc = fn (reader: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()>;
-#[allow(non_snake_case)]
-mod GPRReg {
-    pub const A : usize = 0;
-    pub const C : usize = 1;
-    pub const D : usize = 2;
-    pub const B : usize = 3;
-    pub const SP: usize = 4;
-    pub const BP: usize = 5;
-    pub const SI: usize = 6;
-    pub const DI: usize = 7;
-}
-const DISASM_REG16_MAP: &[&'static str] = &[
-    "ax",
-    "cx",
-    "dx",
-    "bx",
-    "sp",
-    "bp",
-    "si",
-    "di"
-];
-const DISASM_REG32_MAP: &[&'static str] = &[
-    "eax",
-    "ecx",
-    "edx",
-    "ebx",
-    "esp",
-    "ebp",
-    "esi",
-    "edi"
-];
-#[derive(Debug, Clone, Copy)]
-struct Modrm(u8);
-impl Modrm {
-    #[inline]
-    pub const fn modb(self) -> u8 {
-        self.0 >> 6
-    }
-    #[inline]
-    pub const fn reg(self) -> u8 {
-        (self.0 >> 3) & 0b111
-    }
-
-    #[inline]
-    pub const fn rm(self) -> u8 {
-        self.0 & 0b111
-    }
-}
 struct VM {
     gprs: [u32; 8],
     rip: u32,
@@ -131,42 +88,6 @@ impl VM {
     }
 }
 
-fn disasm_add(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
-    match op {
-        0x01 => {
-            let modrm = Modrm(r.read_u8()?);
-            match modrm.modb() {
-                0b11 => {
-                    eprintln!("add {}, {}", DISASM_REG16_MAP[modrm.rm() as usize], DISASM_REG16_MAP[modrm.reg() as usize])
-                }
-                modb => todo!("Unsupported modb={:2b} for add", modb)
-            }
-            // eprintln!("add {}, {}", DISASM_REG16_MAP[(op-0x01) as usize])
-        }
-        _ => todo!("Handle 0x{:02X} in add", op)
-    }
-    Some(())
-}
-fn disasm_mov(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
-    // TODO: Replace with a hashmap... I'm too lazy rn
-    match op {
-        op if op >= 0xB8 && op <= 0xB8+7 => {
-            let reg = op - 0xB8;
-            eprintln!("mov {}, {}", DISASM_REG16_MAP[reg as usize], r.read_u16()?); 
-        }
-        _ => todo!("Handle 0x{:02X} in mov", op)
-    }
-    Some(())
-}
-fn disasm_cmp_rax_imm16(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
-    match op {
-        0x3D => {
-            eprintln!("cmp {}, {}", DISASM_REG16_MAP[GPRReg::A], r.read_u16()?); 
-        }
-        _ => unreachable!("Invalid")
-    }
-    Some(())
-}
 
 type RunFunc = fn (vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()>;
 
@@ -201,15 +122,6 @@ fn run_mov(vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()> {
     Some(())
 }
 lazy_static! {
-    static ref disasm_no_prefix: HashMap<u8, DisasmFunc> = {
-        let mut m: HashMap<u8, DisasmFunc> = HashMap::new();
-        for op in 0xB8..0xB8+8 {
-            m.insert(op, disasm_mov);
-        }
-        m.insert(0x01, disasm_add);
-        m.insert(0x3D, disasm_cmp_rax_imm16);
-        m
-    };
     static ref vm_no_prefix: HashMap<u8, RunFunc> = {
         let mut m: HashMap<u8, RunFunc> = HashMap::new();
         for op in 0xB8..0xB8+8 {
@@ -218,24 +130,6 @@ lazy_static! {
         m.insert(0x01, run_add);
         m
     };
-}
-fn disasm_opcode(reader: &mut Reader, prefixes: BitPrefix) -> Option<()> {
-    match reader.read_u8()? {
-        0x0F => todo!("Escape sequence decoding is not supported"),
-        op => {
-            match disasm_no_prefix.get(&op) {
-                Some(h) => (h)(reader, prefixes, op),
-                None => {
-                    todo!("Opcode 0x{:02X} is not supported", op);
-                }
-            }
-        }
-    }
-}
-fn disasm_inst(reader: &mut Reader) -> Option<()> {
-    let prefixes = parse_prefixes(reader)?;
-    disasm_opcode(reader, prefixes);
-    Some(())
 }
 
 fn run_opcode(vm: &mut VM, prefixes: BitPrefix) -> Option<()> {
