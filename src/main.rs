@@ -73,6 +73,16 @@ const DISASM_REG16_MAP: &[&'static str] = &[
     "si",
     "di"
 ];
+const DISASM_REG32_MAP: &[&'static str] = &[
+    "eax",
+    "ecx",
+    "edx",
+    "ebx",
+    "esp",
+    "ebp",
+    "esi",
+    "edi"
+];
 #[derive(Debug, Clone, Copy)]
 struct Modrm(u8);
 impl Modrm {
@@ -90,6 +100,26 @@ impl Modrm {
         self.0 & 0b111
     }
 }
+struct VM {
+    gprs: [u32; 8],
+    rip: u32,
+    ram: Vec<u8>,
+}
+impl VM {
+    pub fn dump_gprs(&self) {
+        for (i, gpr) in self.gprs.iter().copied().enumerate() {
+            if i > 0 {
+                if i % 4 == 0 {
+                    eprintln!()
+                } else {
+                    eprint!(" ");
+                }
+            }
+            eprint!("{}={:08X}", DISASM_REG32_MAP[i as usize], gpr)
+        }
+    }
+}
+
 fn disasm_add(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
     match op {
         0x01 => {
@@ -117,6 +147,39 @@ fn disasm_mov(r: &mut Reader, prefixes: BitPrefix, op: u8) -> Option<()> {
     }
     Some(())
 }
+
+type RunFunc = fn (vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()>;
+
+fn run_add(vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()> {
+    match op {
+        0x01 => {
+            let mut r = Reader::new(&vm.ram[vm.rip as usize..]);
+            let modrm = Modrm(r.read_u8()?);
+            match modrm.modb() {
+                0b11 => {
+                    vm.gprs[modrm.rm() as usize] = (vm.gprs[modrm.rm() as usize] & 0xFFFF0000) | (((vm.gprs[modrm.rm() as usize] as u16) + (vm.gprs[modrm.reg() as usize] as u16)) as u32);
+                }
+                modb => todo!("Unsupported modb={:2b} for add", modb)
+            }
+            vm.rip = r.offset_from(&vm.ram).unwrap() as u32;
+            // eprintln!("add {}, {}", DISASM_REG16_MAP[(op-0x01) as usize])
+        }
+        _ => todo!("Handle 0x{:02X} in add", op)
+    }
+    Some(())
+}
+fn run_mov(vm: &mut VM, prefixes: BitPrefix, op: u8) -> Option<()> {
+    match op {
+        op if op >= 0xB8 && op <= 0xB8+7 => {
+            let reg = op - 0xB8;
+            let mut r = Reader::new(&vm.ram[vm.rip as usize..]);
+            vm.gprs[reg as usize] = (r.read_u16()? as u32) | (vm.gprs[reg as usize] & 0xFFFF0000);
+            vm.rip = r.offset_from(&vm.ram).unwrap() as u32;
+        }
+        _ => todo!("Handle 0x{:02X} in mov", op)
+    }
+    Some(())
+}
 lazy_static! {
     static ref disasm_no_prefix: HashMap<u8, DisasmFunc> = {
         let mut m: HashMap<u8, DisasmFunc> = HashMap::new();
@@ -124,6 +187,14 @@ lazy_static! {
             m.insert(op, disasm_mov);
         }
         m.insert(0x01, disasm_add);
+        m
+    };
+    static ref vm_no_prefix: HashMap<u8, RunFunc> = {
+        let mut m: HashMap<u8, RunFunc> = HashMap::new();
+        for op in 0xB8..0xB8+8 {
+            m.insert(op, run_mov);
+        }
+        m.insert(0x01, run_add);
         m
     };
 }
@@ -145,6 +216,30 @@ fn disasm_inst(reader: &mut Reader) -> Option<()> {
     disasm_opcode(reader, prefixes);
     Some(())
 }
+
+fn run_opcode(vm: &mut VM, prefixes: BitPrefix) -> Option<()> {
+    let mut r = Reader::new(&vm.ram[vm.rip as usize..]);
+    match r.read_u8()? {
+        0x0F => todo!("Escape sequence decoding is not supported"),
+        op => {
+            match vm_no_prefix.get(&op) {
+                Some(h) => {
+                    vm.rip = r.offset_from(&vm.ram).unwrap() as u32;
+                    (h)(vm, prefixes, op)
+                }
+                None => todo!("Opcode 0x{:02X} is not supported", op)
+            }
+        }
+    }
+}
+fn run_inst(vm: &mut VM) -> Option<()> {
+    let mut r = Reader::new(&vm.ram[vm.rip as usize..]);
+    let prefixes = parse_prefixes(&mut r)?;
+    vm.rip = r.offset_from(&vm.ram).unwrap() as u32;
+    run_opcode(vm, prefixes);
+    Some(())
+}
+
 fn main() -> ExitCode {
     let mut args = env::args();
     let mut input = String::new();
@@ -167,10 +262,11 @@ fn main() -> ExitCode {
         }
         Ok(v) => v,
     };
-    let mut r = Reader::new(&bytes);
-    while r.has_left() {
-        disasm_inst(&mut r).expect("Invalid Instruction");
+    let mut vm = VM { gprs: [0;8], rip: 0, ram: bytes };
+    while (vm.rip as usize) < vm.ram.len() {
+        run_inst(&mut vm).expect("Invalid Instruction");
     }
-    println!("INFO: File size = {}", bytes.len());
+    eprintln!("INFO: Register dump:");
+    vm.dump_gprs();
     ExitCode::SUCCESS
 }
